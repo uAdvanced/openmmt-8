@@ -1,0 +1,83 @@
+# OpenMMT-8 screens: two-line LCD templates (16 + 16 characters) and the original unit's
+# main loop pass per screen, in machine cycles: with a key held (7800 + held), with none
+# (7500 + idle), and the pass that draws it over another screen (9000 + 32 * draw; 0 = the
+# shown cells alone lengthen the pass). Measured on the original unit; screens shown only
+# while running keep the defaults. tools/gen_screens.py turns this into build/core/screens.h.
+#
+# name      line 1              line 2              held idle draw
+SELPART     " SELECT PART xx "  "                "    42   45   81
+SELSONG     " SELECT SONG xx "  "                "    56   35   27
+PLAY        "PLAYING PART  aa"  "   BEAT xxx     "    36   49    0
+NEXT        "PART aa NEXT: bb"  "   BEAT xxx     "    36   49    0
+SONGPLAY    "SONG xx STEP aaa"  "PART yy BEAT zzz"    36   49    0
+RECSEL      "pick a track    "  "to record into  "    90   49   65
+RECCD       "recording     xx"  "count-in:     yy"    36   49    0
+RECBEAT     "recording     xx"  "   BEAT yyy     "    36   49    0
+LEN         "    PART xx     "  "LENGTH yyy BEATS"    46   49   97
+LENTOP      "resizes from top"  "LENGTH yyy BEATS"    46   49    0
+LENCHG      "new length set  "  "                "    21    1    0
+COPYDONE    "copied          "  "                "    19    1    0
+COPYPART    "copy part       "  " xx -> part yy  "    51   49   97
+COPYSEL     " copy           "  " from xx to yy  "    51   49  103
+COPYSONG    "copy song       "  " xx -> song yy  "    43   49   97
+ERASEDONE   "cleared         "  "                "    16    1    0
+ERASEPART   " ERASE PART  xx "  "                "    24   49   41
+ERASESONG   " ERASE SONG  xx "  "                "    14   49   33
+MERGE       "pick 2 tracks   "  "to combine      "    24   49   33
+MERGED      "combined onto   "  "the 2nd track   "    22    1    0
+CHAN        "pick midi chan  "  "                "    98   49   35
+QUANT       "QUANTIZE TO 1/xx"  "                "    43   49   35
+QDONE       "quantized       "  "                "    16    1    0
+TRUP        "shift pitch up  "  " xx semis       "    49   49   36
+TRDN        "shift pitch down"  " xx semis       "    49   49   35
+TRDONE      "pitch shifted   "  "                "    22   11    0
+TEMPO       "  TEMPO = xx    "  "bpm             "    30   49   38
+TEMPOSAVED  "song bpm saved  "  "                "    22    1    0
+FILT        "RECORD MIDI     "  "             xxx"    18   49   37
+FILTCH      "rec from midi   "  "  chan:      xx "    41   49   35
+CLKSRC      "clock from:     "  "                "    24   49   40
+CLKOUT      "send midi clock "  "ENABLE: xxx     "    26   49   35
+AUTOST      "start from midi "  "ENABLE: xxx     "    25   49   35
+CLICKA      "CLICK VALUE 1/xx"  "rec click    yy "    43   49   38
+CLICKB      "PLAY CLICK xxx  "  "count-in:   yy  "    34   49   37
+.if TAPE
+TAPE0       "save everything "  "to tape         "    18   49   34
+TAPE1       "check the tape  "  "for bad data    "    18   49   32
+TAPE2       "load everything "  "from tape       "    23   49   32
+TAPE3       "load a part     "  "  off tape: xx  "    46   49   36
+TAPE4       "load a song     "  "  off tape: xx  "    51   49   36
+.endif
+TAPE5       "send everything "  "over midi       "    18   49   32
+EDITSONG    "  EDIT SONG xx  "  "STEP aa  PART bb"    67   52  178
+INSSTEP     "add a step      "  "STEP aa  PART bb"    36   49    0
+ERASESTEP   "remove a step   "  "STEP aa  PART bb"    36   49    0
+STEPINS     "step added      "  "                "    20    1    0
+STEPERASED  "step removed    "  "                "    20    1    0
+NEWPART     "part renamed    "  "                "    20    1    0
+NEWSONG     "song renamed    "  "                "    20    1    0
+MEMORY      "memory free     "  "  xx  pct       "    12   49  101
+FULL        "out of memory   "  "                "    20    1    0
+EDEV        "xxx/xx:         "  "        CHAN    "    36   49    0
+EDEND       "track ends here "  "                "    36   49    0
+EVERASED    "event deleted   "  "                "    20    1    0
+EVINS       "event added     "  "                "    20    1    0
+INSERT      "INSERT          "  "AT xxx/xx       "    36   49    0
+.if EDITX
+EDSTEP      "xxx/xx:  (EMPTY)"  "   GRID 1/xx    "    36   49    0
+STEPIN      "STEP AT xxx/xx  "  "PLAY NOTES  1/xx"    36   49    0
+UNDONE      "  EDIT UNDONE   "  "                "    20    1    0
+EDCC        "EDIT DATA KNOB  "  "MIDI CC #:   xxx"    18   49   37
+EDAUD       "EDIT AUDITION   "  "PLAY NOTES:  xxx"    18   49   37
+EDGRID      "EDIT FF/REW MOVE"  "BY QUANTIZE: xxx"    18   49   37
+EDTIME      "EDIT TIME SHOWN "  "IN BARS:     xxx"    18   49   37
+.endif
+.if TAPE
+TAPESAV     "writing tape..  "  "PART: --        "     0    0    0
+TAPEABT     "tape canceled   "  "                "     0    0    0
+TAPENOW     "press play on   "  "the tape now... "     0    0    0
+TAPEVFY     "checking tape.. "  "PART: --        "     0    0    0
+TAPELOD     "reading tape..  "  "PART: --        "     0    0    0
+TAPEPRT     "LOADING PART 00 "  "PART: --        "     0    0    0
+TAPESNG     "LOADING SONG 00 "  "PART: --        "     0    0    0
+.endif
+SHIFT       "offset track    "  " 00/384 notes   "    43   49   35

@@ -1,0 +1,34 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.eggs/
+
+# Build output
+.tmp/
+artifacts/
+dist/
+emulator/build/
+emulator/build-linux/
+emulator/build-macos/
+emulator/build-win64/
+openmmt-8/build/
+jam8/build/
+jam8/tests/test_jam8
+
+# ROM images. Build them with tools/build_roms.sh.
+*.bin
+*.ihx
+
+# Local reference files that are not part of this repository
+analysis/
+
+# Editors
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+*.pdf

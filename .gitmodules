@@ -1,0 +1,7 @@
+[submodule "emulator/third_party/emu8051"]
+	path = emulator/third_party/emu8051
+	url = https://github.com/jarikomppa/emu8051.git
+
+[submodule "emulator/third_party/imgui"]
+	path = emulator/third_party/imgui
+	url = https://github.com/ocornut/imgui.git

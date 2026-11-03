@@ -1,0 +1,7 @@
+Roboto Medium
+
+Copyright 2015 Google Inc. All Rights Reserved.
+
+The panel embeds Roboto-Medium.ttf from Dear ImGui (misc/fonts).
+This font is licensed under the Apache License, Version 2.0.
+The license text is Apache-2.0.txt in this directory.

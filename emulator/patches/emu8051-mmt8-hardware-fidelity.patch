@@ -1,0 +1,243 @@
+diff --git a/core.c b/core.c
+index f31d4f6..8c6596c 100644
+--- a/core.c
++++ b/core.c
+@@ -32,19 +32,26 @@
+ #include <string.h>
+ #include "emu8051.h"
+ 
++/* Mode 1 transmitter: a 10-bit frame (start, 8 data bits LSB first, stop), one bit time per
++ * 32 Timer1 overflows (16 with SMOD). TI rises when the frame is complete. */
+ static void serial_tx(struct em8051 *aCPU) {
++	uint8_t r;
++	bool tx_bit;
+ 	// Test if still something to send
+ 	if (! aCPU->serial_out_remaining_bits)
+ 	       return;
++	if (++aCPU->serial_baud_div < ((aCPU->mSFR[REG_PCON] & 0x80) ? 16 : 32))
++		return;
++	aCPU->serial_baud_div = 0;
+ 
+-	aCPU->serial_out_remaining_bits--;
+-	bool tx_bit = (aCPU->mSFR[REG_SBUF] >> aCPU->serial_out_remaining_bits);
++	r = --aCPU->serial_out_remaining_bits;
++	tx_bit = r == 9 ? 0 : r == 0 ? 1 : ((aCPU->mSFR[REG_SBUF] >> (8 - r)) & 1);
+ 	// Set P3.1 according to the currently clocked out SERIAL bit
+ 	aCPU->mSFR[REG_P3] &= ~(1 << 1);
+ 	if (tx_bit) aCPU->mSFR[REG_P3] |= (1 << 1);
+ 
+ 	// If everything is sent now, add it to the visual buffer & raise interrupt
+-	if (aCPU->serial_out_remaining_bits == 0) {
++	if (r == 0) {
+ 		aCPU->serial_out[aCPU->serial_out_idx] = aCPU->mSFR[REG_SBUF];
+ 		aCPU->serial_out_idx = (aCPU->serial_out_idx + 1) % sizeof(aCPU->serial_out);
+ 		aCPU->mSFR[REG_SCON] |= (1<<1); // Set TI bit
+@@ -57,6 +64,9 @@ static void timer_tick(struct em8051 *aCPU)
+ {
+     uint8_t increment;
+     uint16_t v;
++    /* Set on the Timer1 overflow edge. The UART baud clock uses that edge,
++     * but a real 8051 leaves TF1 set so ET1 can still vector. */
++    uint8_t t1_overflow = 0;
+ 
+     // TODO: External int 0 flag
+ 
+@@ -246,8 +256,10 @@ static void timer_tick(struct em8051 *aCPU)
+                     {
+                         // TH1 overflowed; set bit
+                         // Only update TF1 if timer 0 is not in "mode 3"
+-                    if (!((aCPU->mSFR[REG_TMOD] & T0_MODE3_MASK ) == T0_MODE3_MASK))
++                    if (!((aCPU->mSFR[REG_TMOD] & T0_MODE3_MASK ) == T0_MODE3_MASK)) {
+                         aCPU->mSFR[REG_TCON] |= TCONMASK_TF1;
++                        t1_overflow = 1;
++                    }
+ 
+                     } 
+                 }
+@@ -269,6 +281,7 @@ static void timer_tick(struct em8051 *aCPU)
+               
+                         if (!((aCPU->mSFR[REG_TMOD] & T0_MODE3_MASK)  == T0_MODE3_MASK))
+                             aCPU->mSFR[REG_TCON] |= TCONMASK_TF1;
++                        t1_overflow = 1;
+ 
+                     }
+                 }
+@@ -284,8 +297,10 @@ static void timer_tick(struct em8051 *aCPU)
+                     // Only update TF1 if timer 0 is not in "mode 3"
+                     
+             
+-                    if (!((aCPU->mSFR[REG_TMOD] & T0_MODE3_MASK ) == T0_MODE3_MASK))
++                    if (!((aCPU->mSFR[REG_TMOD] & T0_MODE3_MASK ) == T0_MODE3_MASK)) {
+                         aCPU->mSFR[REG_TCON] |= TCONMASK_TF1;
++                        t1_overflow = 1;
++                    }
+                     
+                 }
+                 break;
+@@ -293,12 +308,10 @@ static void timer_tick(struct em8051 *aCPU)
+                 break;
+             }
+ 
+-	    // If Timer1 overflowed, see if we need to send a serial bit
+-            if (aCPU->mSFR[REG_TCON] & TCONMASK_TF1) {
+-                if (aCPU->mSFR[REG_SCON] & SCONMASK_SM1) {
+-                    serial_tx(aCPU);
+-		    aCPU->mSFR[REG_TCON] &= ~TCONMASK_TF1; // clear overflow flag
+-                }
++	    /* UART mode 1 is clocked by the Timer1 overflow edge. Do not clear TF1:
++     * the timer interrupt and the baud generator are independent on a real 8051. */
++            if (t1_overflow && (aCPU->mSFR[REG_SCON] & SCONMASK_SM1)) {
++                serial_tx(aCPU);
+             }
+         }
+     }
+@@ -369,7 +382,10 @@ void handle_interrupts(struct em8051 *aCPU)
+                 dest_ip = ISR_TF1;
+             }
+         }
+-        if (aCPU->mSFR[REG_IE] & IEMASK_ES && aCPU->serial_interrupt_trigger && !hi)
++        /* The serial request is level-sensitive: RI or TI stays set until software clears it,
++         * including TI set by software to prime transmission. */
++        if (aCPU->mSFR[REG_IE] & IEMASK_ES &&
++            (aCPU->serial_interrupt_trigger || (aCPU->mSFR[REG_SCON] & (SCONMASK_RI | SCONMASK_TI))) && !hi)
+         {
+             // Serial port interrupt 
+             if (!lo)
+@@ -450,9 +466,13 @@ bool tick(struct em8051 *aCPU)
+     uint8_t v;
+     bool ticked = false;
+ 
++    /* An opcode handler returns its extra machine cycles; the next instruction starts only
++     * after they have elapsed. */
+     if (aCPU->mTickDelay)
+     {
+         aCPU->mTickDelay--;
++        timer_tick(aCPU);
++        return false;
+     }
+ 
+     // Test for Power Down
+@@ -554,4 +574,5 @@ void reset(struct em8051 *aCPU, bool aWipe)
+     // Clean Serial
+     aCPU->serial_interrupt_trigger = 0;
+     aCPU->serial_out_remaining_bits = 0;
++    aCPU->serial_baud_div = 0;
+ }
+diff --git a/emu.c b/emu.c
+index aad03db..3203313 100644
+--- a/emu.c
++++ b/emu.c
+@@ -166,7 +166,8 @@ void setSpeed(int aSpeed, int aRunmode)
+ 
+ void emu_sfrwrite_SBUF(struct em8051 *aCPU, uint8_t aRegister)
+ {
+-    aCPU->serial_out_remaining_bits = 8;
++    aCPU->serial_out_remaining_bits = 10;
++    aCPU->serial_baud_div = 0;
+ }
+ 
+ uint8_t emu_sfrread(struct em8051 *aCPU, uint8_t aRegister)
+diff --git a/emu8051.h b/emu8051.h
+index 9072d4a..9672e5b 100644
+--- a/emu8051.h
++++ b/emu8051.h
+@@ -89,7 +89,8 @@ struct em8051
+     // Internal handling of UART
+     char serial_out[18]; // The shown size is only 18 chars
+     uint8_t serial_out_idx;
+-    uint8_t serial_out_remaining_bits;
++    uint8_t serial_out_remaining_bits; /* bit times left in the frame being sent */
++    uint8_t serial_baud_div; /* Timer1 overflows into the current bit time */
+     bool serial_interrupt_trigger;
+ };
+ 
+diff --git a/opcodes.c b/opcodes.c
+index 0bbf4c6..fd31f93 100644
+--- a/opcodes.c
++++ b/opcodes.c
+@@ -134,8 +134,8 @@ static void add_solve_flags(struct em8051 * aCPU, uint8_t value1, uint8_t value2
+     /* Carry: overflow from 7th bit to 8th bit */
+     bool carry = ((value1 & 255) + (value2 & 255) + carryin) >> 8;
+     
+-    /* Auxiliary carry: overflow from 3th bit to 4th bit */
+-    bool auxcarry = ((value1 & 7) + (value2 & 7) + carryin) >> 3;
++    /* Auxiliary carry: overflow from bit 3 into bit 4 */
++    bool auxcarry = ((value1 & 0x0f) + (value2 & 0x0f) + carryin) >> 4;
+     
+     /* Overflow: overflow from 6th or 7th bit, but not both */
+     bool overflow = (((value1 & 127) + (value2 & 127) + carryin) >> 7)^carry;
+@@ -147,7 +147,7 @@ static void add_solve_flags(struct em8051 * aCPU, uint8_t value1, uint8_t value2
+ static void sub_solve_flags(struct em8051 * aCPU, uint8_t value1, uint8_t value2, bool carryin)
+ {
+     bool carry = (((value1 & 255) - (value2 & 255) - carryin) >> 8) & 1;
+-    bool auxcarry = (((value1 & 7) - (value2 & 7) - carryin) >> 3) & 1;
++    bool auxcarry = (((value1 & 0x0f) - (value2 & 0x0f) - carryin) >> 4) & 1;
+     bool overflow = ((((value1 & 127) - (value2 & 127) - carryin) >> 7) & 1)^carry;
+     PSW = (PSW & ~(PSWMASK_C|PSWMASK_AC|PSWMASK_OV)) |
+                           (carry << PSW_C) | (auxcarry << PSW_AC) | (overflow << PSW_OV);
+@@ -797,7 +797,7 @@ static uint8_t anl_c_bitaddr(struct em8051 *aCPU)
+         PSW = (PSW & ~PSWMASK_C) | (PSWMASK_C * value);
+     }
+     PC += 2;
+-    return 0;
++    return 1;
+ }
+ 
+ static uint8_t movc_a_indir_a_pc(struct em8051 *aCPU)
+@@ -805,7 +805,7 @@ static uint8_t movc_a_indir_a_pc(struct em8051 *aCPU)
+     uint16_t address = PC + 1 + ACC;
+     ACC = CODEMEM(address);
+     PC++;
+-    return 0;
++    return 1;
+ }
+ 
+ static uint8_t div_ab(struct em8051 *aCPU)
+@@ -842,8 +842,9 @@ static uint8_t mov_mem_mem(struct em8051 *aCPU)
+ 
+ static uint8_t mov_mem_indir_rx(struct em8051 *aCPU)
+ {
+-    uint8_t address_from = OPERAND1;
+-    uint8_t address_to = INDIR_RX_ADDRESS;
++    /* MOV direct, @Ri (0x86/0x87): direct is the destination, @Ri is the source. */
++    uint8_t address_to = OPERAND1;
++    uint8_t address_from = INDIR_RX_ADDRESS;
+     uint8_t value = read_mem_indir(aCPU, address_from);
+     write_mem(aCPU, address_to, value);
+     PC += 2;
+@@ -956,7 +957,7 @@ static uint8_t orl_c_compl_bitaddr(struct em8051 *aCPU)
+         PSW = (PSW & ~PSWMASK_C) | (PSWMASK_C * value);
+     }
+     PC += 2;
+-    return 0;
++    return 1;
+ }
+ 
+ static uint8_t mov_c_bitaddr(struct em8051 *aCPU)
+@@ -1056,7 +1057,7 @@ static uint8_t anl_c_compl_bitaddr(struct em8051 *aCPU)
+         PSW = (PSW & ~PSWMASK_C) | (PSWMASK_C * value);
+     }
+     PC += 2;
+-    return 0;
++    return 1;
+ }
+ 
+ 
+@@ -1360,7 +1361,7 @@ static uint8_t movx_a_indir_dptr(struct em8051 *aCPU)
+ 
+ static uint8_t movx_a_indir_rx(struct em8051 *aCPU)
+ {
+-    uint16_t address = INDIR_RX_ADDRESS;
++    uint16_t address = ((uint16_t)aCPU->mSFR[REG_P2] << 8) | INDIR_RX_ADDRESS;
+     if (aCPU->xread)
+     {
+         ACC = aCPU->xread(aCPU, address);
+@@ -1424,7 +1425,7 @@ static uint8_t movx_indir_dptr_a(struct em8051 *aCPU)
+ 
+ static uint8_t movx_indir_rx_a(struct em8051 *aCPU)
+ {
+-    uint16_t address = INDIR_RX_ADDRESS;
++    uint16_t address = ((uint16_t)aCPU->mSFR[REG_P2] << 8) | INDIR_RX_ADDRESS;
+ 
+     if (aCPU->xwrite)
+     {
