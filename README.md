@@ -6,6 +6,8 @@ The CLAP plugin runs either ROM, with the panel, the display, and MIDI.
 
 This project is not affiliated with Alesis.
 
+**[openmmt8.outand.in](https://openmmt8.outand.in)** has the manuals for both ROMs and a guide to building and burning a 27C256.
+
 > [!IMPORTANT]
 > **OpenMMT-8 is free. If it is useful to you, please send a donation in bitcoin.**
 >
